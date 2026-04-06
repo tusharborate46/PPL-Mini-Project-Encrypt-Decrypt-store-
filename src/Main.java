@@ -106,9 +106,9 @@ public class Main {
     }
 
     private static void printBanner() {
-        System.out.println(PURPLE + "╔═══════════════════════════════════════════════╗");
-        System.out.println("║       🔐 Java TUI Encrypted Notes Tool        ║");
-        System.out.println("╚═══════════════════════════════════════════════╝" + RESET);
+        System.out.println(PURPLE + "+-----------------------------------------------+");
+        System.out.println("|         Java TUI Encrypted Notes Tool         |");
+        System.out.println("+-----------------------------------------------+" + RESET);
     }
 
     private static void printMenu(String path) {
@@ -121,9 +121,9 @@ public class Main {
     }
 
     private static void boxedTitle(String title) {
-        String border = "═".repeat(Math.max(10, title.length() + 4));
-        System.out.println("\n" + CYAN + "╔" + border + "╗");
-        System.out.println("║  " + title + "  ║");
-        System.out.println("╚" + border + "╝" + RESET);
+        String border = "-".repeat(Math.max(10, title.length() + 4));
+        System.out.println("\n" + CYAN + "+" + border + "+");
+        System.out.println("|  " + title + "  |");
+        System.out.println("+" + border + "+" + RESET);
     }
 }
