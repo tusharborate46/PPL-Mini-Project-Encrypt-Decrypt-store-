@@ -3,64 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Notes Portal</title>
+    <title>Secure Messenger</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <!-- Include CryptoJS for client-side encryption -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
-    <div class="background-animation">
-        <div class="glow-orb orb-1"></div>
-        <div class="glow-orb orb-2"></div>
-    </div>
 
-    <div class="container">
+
+    <!-- Login/Setup Screen -->
+    <div class="container" id="login-container">
         <header>
-            <h1><span class="icon">🔒</span> Secure Notes Portal</h1>
-            <p class="subtitle">End-to-End Encrypted Storage</p>
+            <h1><span class="icon">💬</span> Secure Chat</h1>
+            <p class="subtitle">End-to-End Encrypted Room</p>
         </header>
-
         <main class="glass-panel">
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="write-tab">Write</button>
-                <button class="tab-btn" data-tab="read-tab">Read</button>
-                <button class="tab-btn" data-tab="raw-tab">Raw Data</button>
+            <div class="form-group">
+                <label for="display-name">Display Name</label>
+                <input type="text" id="display-name" placeholder="E.g. Alice">
             </div>
-
-            <div class="tab-content active" id="write-tab">
-                <div class="form-group">
-                    <label for="write-passphrase">Passphrase</label>
-                    <input type="password" id="write-passphrase" placeholder="Enter a strong passphrase" autocomplete="new-password">
-                </div>
-                <div class="form-group">
-                    <label for="write-text">Secret Message</label>
-                    <textarea id="write-text" rows="5" placeholder="Type your secret message here..."></textarea>
-                </div>
-                <button id="btn-encrypt" class="primary-btn">Encrypt & Save</button>
+            <div class="form-group">
+                <label for="room-passphrase">Room Passphrase</label>
+                <input type="password" id="room-passphrase" placeholder="Shared secret passphrase">
             </div>
-
-            <div class="tab-content" id="read-tab">
-                <div class="form-group">
-                    <label for="read-passphrase">Passphrase</label>
-                    <input type="password" id="read-passphrase" placeholder="Enter your passphrase to decrypt">
-                </div>
-                <button id="btn-decrypt" class="primary-btn">Decrypt Message</button>
-                <div class="result-area hidden" id="decrypt-result-area">
-                    <label>Decrypted Message</label>
-                    <div class="result-box" id="decrypt-result"></div>
-                </div>
+            <button id="btn-join" class="primary-btn">Join Chat</button>
+            <div style="margin-top: 1rem; text-align: center;">
+                <button id="btn-admin-login" class="secondary-btn">Join as Admin (No Key)</button>
             </div>
-
-            <div class="tab-content" id="raw-tab">
-                <button id="btn-fetch-raw" class="primary-btn">Fetch Raw Encrypted Data</button>
-                <div class="result-area hidden" id="raw-result-area">
-                    <label>Raw Data (Encrypted)</label>
-                    <div class="result-box raw-text" id="raw-result"></div>
-                </div>
-            </div>
-
-            <div id="toast-container"></div>
         </main>
     </div>
+
+    <!-- Main Chat Interface -->
+    <div class="chat-container hidden" id="chat-container">
+        <header class="chat-header">
+            <div>
+                <h2 id="room-title">Secure Room</h2>
+                <span id="user-info"></span>
+            </div>
+            <button id="btn-leave" class="secondary-btn small-btn">Leave</button>
+        </header>
+        
+        <main class="chat-main" id="chat-messages">
+            <!-- Messages will be injected here -->
+        </main>
+        
+        <footer class="chat-footer" id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Type an encrypted message..." autocomplete="off">
+            <button id="btn-send" class="primary-btn send-btn">Send</button>
+        </footer>
+    </div>
+
+    <div id="toast-container"></div>
 
     <script src="script.js"></script>
 </body>

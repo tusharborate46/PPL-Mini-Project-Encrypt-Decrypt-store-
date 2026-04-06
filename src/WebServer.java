@@ -6,26 +6,34 @@ import com.sun.net.httpserver.HttpExchange;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class WebServer {
-    private static final CryptoService cryptoService = new CryptoService();
-    private static final FileService fileService = new FileService("notes.txt");
+    private static final FileService fileService = new FileService("messages.json");
+    private static String messagesJson = "[]";
 
     public static void main(String[] args) throws IOException {
+        if (fileService.exists()) {
+            String content = fileService.read().trim();
+            if (content.startsWith("[") && content.endsWith("]")) {
+                messagesJson = content;
+            } else {
+                fileService.write(messagesJson);
+            }
+        } else {
+            fileService.write(messagesJson);
+        }
+
         int port = 8080;
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         
         server.createContext("/", new StaticFileHandler());
-        server.createContext("/api/write", new WriteHandler());
-        server.createContext("/api/read", new ReadHandler());
-        server.createContext("/api/raw", new RawHandler());
+        server.createContext("/api/messages", new MessagesHandler());
         
-        server.setExecutor(null); // creates a default executor
+        server.setExecutor(null);
         System.out.println("Server started on http://localhost:" + port);
         server.start();
     }
@@ -59,139 +67,39 @@ public class WebServer {
         }
     }
 
-    static class WriteHandler implements HttpHandler {
+    static class MessagesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-                // Simple JSON parsing (avoiding external libraries)
-                String passphrase = extractJsonValue(body, "passphrase");
-                String text = extractJsonValue(body, "text");
+            try {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJsonResponse(exchange, 200, messagesJson);
+                } else if ("POST".equals(exchange.getRequestMethod())) {
+                    String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+                    
+                    // Simple validation
+                    if (!body.startsWith("{") || !body.endsWith("}")) {
+                        sendJsonResponse(exchange, 400, "{\"error\": \"Invalid JSON\"}");
+                        return;
+                    }
 
-                if (passphrase == null || passphrase.isBlank()) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"Passphrase is required\"}");
-                    return;
+                    synchronized (WebServer.class) {
+                        if (messagesJson.equals("[]")) {
+                            messagesJson = "[\n  " + body + "\n]";
+                        } else {
+                            // remove last bracket
+                            messagesJson = messagesJson.substring(0, messagesJson.lastIndexOf("]")) + ",\n  " + body + "\n]";
+                        }
+                        fileService.write(messagesJson);
+                    }
+                    sendJsonResponse(exchange, 200, "{\"success\": true}");
+                } else {
+                    sendResponse(exchange, 405, "Method Not Allowed", "text/plain");
                 }
-                if (text == null || text.isBlank()) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"Text is required\"}");
-                    return;
-                }
-
-                try {
-                    String encrypted = cryptoService.encrypt(text, passphrase);
-                    fileService.write(encrypted);
-                    sendJsonResponse(exchange, 200, "{\"success\": true, \"message\": \"Saved successfully to " + fileService.path().replace("\\", "\\\\") + "\"}");
-                } catch (Exception e) {
-                    sendJsonResponse(exchange, 500, "{\"success\": false, \"error\": \"" + escapeJson(e.getMessage()) + "\"}");
-                }
-            } else {
-                sendResponse(exchange, 405, "Method Not Allowed", "text/plain");
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendJsonResponse(exchange, 500, "{\"error\": \"Server error\"}");
             }
         }
-    }
-
-    static class ReadHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("POST".equals(exchange.getRequestMethod())) {
-                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-                String passphrase = extractJsonValue(body, "passphrase");
-
-                if (passphrase == null || passphrase.isBlank()) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"Passphrase is required\"}");
-                    return;
-                }
-
-                if (!fileService.exists()) {
-                    sendJsonResponse(exchange, 404, "{\"success\": false, \"error\": \"No file found yet. Write something first.\"}");
-                    return;
-                }
-
-                String payload = fileService.read();
-                if (payload.isBlank()) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"File is empty.\"}");
-                    return;
-                }
-
-                try {
-                    String plain = cryptoService.decrypt(payload, passphrase);
-                    sendJsonResponse(exchange, 200, "{\"success\": true, \"text\": \"" + escapeJson(plain) + "\"}");
-                } catch (Exception e) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"Decryption failed. Check passphrase or file content.\"}");
-                }
-            } else {
-                sendResponse(exchange, 405, "Method Not Allowed", "text/plain");
-            }
-        }
-    }
-
-    static class RawHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if ("GET".equals(exchange.getRequestMethod())) {
-                if (!fileService.exists()) {
-                    sendJsonResponse(exchange, 404, "{\"success\": false, \"error\": \"No file found yet.\"}");
-                    return;
-                }
-
-                String raw = fileService.read();
-                if (raw.isBlank()) {
-                    sendJsonResponse(exchange, 400, "{\"success\": false, \"error\": \"File is empty.\"}");
-                    return;
-                }
-
-                sendJsonResponse(exchange, 200, "{\"success\": true, \"text\": \"" + escapeJson(raw) + "\"}");
-            } else {
-                sendResponse(exchange, 405, "Method Not Allowed", "text/plain");
-            }
-        }
-    }
-
-    private static String extractJsonValue(String json, String key) {
-        String searchKey = "\"" + key + "\":";
-        int index = json.indexOf(searchKey);
-        if (index == -1) return null;
-        
-        index += searchKey.length();
-        while (index < json.length() && (json.charAt(index) == ' ' || json.charAt(index) == '\t')) {
-            index++;
-        }
-        
-        if (index >= json.length() || json.charAt(index) != '\"') return null;
-        index++; // skip quote
-        
-        StringBuilder sb = new StringBuilder();
-        boolean escape = false;
-        while (index < json.length()) {
-            char c = json.charAt(index);
-            if (escape) {
-                if (c == 'n') sb.append('\n');
-                else if (c == 't') sb.append('\t');
-                else if (c == '"') sb.append('"');
-                else if (c == '\\') sb.append('\\');
-                else sb.append(c);
-                escape = false;
-            } else if (c == '\\') {
-                escape = true;
-            } else if (c == '"') {
-                break;
-            } else {
-                sb.append(c);
-            }
-            index++;
-        }
-        return sb.toString();
-    }
-    
-    private static String escapeJson(String text) {
-        if (text == null) return "";
-        return text.replace("\\", "\\\\")
-                   .replace("\"", "\\\"")
-                   .replace("\b", "\\b")
-                   .replace("\f", "\\f")
-                   .replace("\n", "\\n")
-                   .replace("\r", "\\r")
-                   .replace("\t", "\\t");
     }
 
     private static void sendJsonResponse(HttpExchange exchange, int statusCode, String response) throws IOException {
@@ -201,7 +109,7 @@ public class WebServer {
     private static void sendResponse(HttpExchange exchange, int statusCode, String response, String contentType) throws IOException {
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", contentType);
-        // Important: set CORS headers for ease of development although not strictly needed when served from same host
+        // Important: set CORS headers
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");

@@ -1,111 +1,182 @@
+const HOST = 'http://localhost:8080';
+
+// State
+let state = {
+    displayName: '',
+    passphrase: '',
+    isAdmin: false,
+    pollInterval: null,
+    lastMessageCount: 0
+};
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Tabs functionality
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
+    // UI Elements
+    const loginContainer = document.getElementById('login-container');
+    const chatContainer = document.getElementById('chat-container');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    
+    // Login
+    document.getElementById('btn-join').addEventListener('click', () => {
+        const name = document.getElementById('display-name').value.trim();
+        const pass = document.getElementById('room-passphrase').value;
+        
+        if (!name || !pass) {
+            return showToast('Both name and passphrase are required', 'error');
+        }
+        
+        state.displayName = name;
+        state.passphrase = pass;
+        state.isAdmin = false;
+        
+        enterChat(`Logged in as ${name}`);
+    });
 
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Remove active class from all
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
+    // Admin Login
+    document.getElementById('btn-admin-login').addEventListener('click', () => {
+        state.isAdmin = true;
+        state.passphrase = '';
+        state.displayName = 'Admin (View Only)';
+        
+        // Hide input area for admin
+        document.getElementById('chat-input-area').style.display = 'none';
+        
+        enterChat('Logged in as Admin');
+    });
+
+    // Send Message
+    const sendMessage = async () => {
+        if (state.isAdmin) return;
+        
+        const rawText = chatInput.value.trim();
+        if (!rawText) return;
+        
+        try {
+            // Encrypt the message locally
+            const encryptedText = CryptoJS.AES.encrypt(rawText, state.passphrase).toString();
             
-            // Add active class to clicked
-            btn.classList.add('active');
-            document.getElementById(btn.dataset.tab).classList.add('active');
+            const payload = {
+                sender: state.displayName,
+                text: encryptedText,
+                timestamp: new Date().toISOString()
+            };
+
+            // Optimistic clear input
+            chatInput.value = '';
+
+            const res = await fetch(`${HOST}/api/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
             
-            // Clear inputs and results when switching tabs
-            clearForm();
+            if (data.success) {
+                pollMessages(); // Fetch immediately
+            } else {
+                showToast(data.error || 'Failed to send', 'error');
+            }
+        } catch (err) {
+            showToast('Failed to encrypt or send message', 'error');
+            console.error(err);
+        }
+    };
+
+    document.getElementById('btn-send').addEventListener('click', sendMessage);
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    // Leave Chat
+    document.getElementById('btn-leave').addEventListener('click', () => {
+        if (state.pollInterval) {
+            clearInterval(state.pollInterval);
+        }
+        state = { displayName: '', passphrase: '', isAdmin: false, pollInterval: null, lastMessageCount: 0 };
+        
+        document.getElementById('display-name').value = '';
+        document.getElementById('room-passphrase').value = '';
+        document.getElementById('chat-input-area').style.display = 'flex';
+        
+        chatContainer.classList.add('hidden');
+        loginContainer.classList.remove('hidden');
+    });
+
+    function enterChat(toastMsg) {
+        loginContainer.classList.add('hidden');
+        chatContainer.classList.remove('hidden');
+        
+        document.getElementById('user-info').textContent = state.isAdmin ? 'Admin View - Encrypted' : state.displayName;
+        
+        showToast(toastMsg, 'success');
+        
+        // Initial fetch
+        pollMessages();
+        
+        // Start polling
+        state.pollInterval = setInterval(pollMessages, 2000);
+    }
+
+    async function pollMessages() {
+        try {
+            const res = await fetch(`${HOST}/api/messages`);
+            const messages = await res.json();
+            
+            // Render if count changed (naive check)
+            if (messages.length !== state.lastMessageCount) {
+                state.lastMessageCount = messages.length;
+                renderMessages(messages);
+            }
+        } catch (err) {
+            console.error('Polling error', err);
+        }
+    }
+
+    function renderMessages(messages) {
+        chatMessages.innerHTML = '';
+        
+        if (messages.length === 0) {
+            chatMessages.innerHTML = '<div class="empty-chat">No messages yet...</div>';
+            return;
+        }
+
+        messages.forEach(msg => {
+            const wrapper = document.createElement('div');
+            wrapper.className = `message ${msg.sender === state.displayName ? 'sent' : 'received'}`;
+            
+            if (state.isAdmin) {
+                // Admin sees encrypted data
+                wrapper.innerHTML = `
+                    <div class="msg-sender">${msg.sender}</div>
+                    <div class="msg-bubble raw-text">${msg.text}</div>
+                `;
+            } else {
+                // User tries to decrypt
+                let displayTxt = '';
+                let isError = false;
+                try {
+                    const bytes = CryptoJS.AES.decrypt(msg.text, state.passphrase);
+                    displayTxt = bytes.toString(CryptoJS.enc.Utf8);
+                    if (!displayTxt) throw new Error('Empty');
+                } catch (e) {
+                    displayTxt = '🔒 [Encrypted / Wrong Passphrase]';
+                    isError = true;
+                }
+                
+                wrapper.innerHTML = `
+                    <div class="msg-sender">${msg.sender}</div>
+                    <div class="msg-bubble ${isError ? 'error-bubble' : ''}">${escapeHtml(displayTxt)}</div>
+                `;
+            }
+            chatMessages.appendChild(wrapper);
         });
-    });
 
-    const HOST = 'http://localhost:8080';
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
-    // Encrypt & Save
-    document.getElementById('btn-encrypt').addEventListener('click', async () => {
-        const passphrase = document.getElementById('write-passphrase').value;
-        const text = document.getElementById('write-text').value;
-
-        if (!passphrase) return showToast('Passphrase is required', 'error');
-        if (!text) return showToast('Message is required', 'error');
-
-        try {
-            const res = await fetch(`${HOST}/api/write`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ passphrase, text })
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                showToast('Message encrypted and saved successfully!', 'success');
-                document.getElementById('write-text').value = '';
-            } else {
-                showToast(data.error || 'Failed to save', 'error');
-            }
-        } catch (err) {
-            showToast('Network error or server down', 'error');
-            console.error(err);
-        }
-    });
-
-    // Decrypt Message
-    document.getElementById('btn-decrypt').addEventListener('click', async () => {
-        const passphrase = document.getElementById('read-passphrase').value;
-        if (!passphrase) return showToast('Passphrase is required', 'error');
-
-        try {
-            const res = await fetch(`${HOST}/api/read`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ passphrase })
-            });
-            const data = await res.json();
-            
-            const resultArea = document.getElementById('decrypt-result-area');
-            const resultBox = document.getElementById('decrypt-result');
-
-            if (data.success) {
-                resultArea.classList.remove('hidden');
-                resultBox.textContent = data.text;
-                showToast('Message decrypted successfully', 'success');
-            } else {
-                resultArea.classList.add('hidden');
-                showToast(data.error || 'Decryption failed', 'error');
-            }
-        } catch (err) {
-            showToast('Network error or server down', 'error');
-            console.error(err);
-        }
-    });
-
-    // Fetch Raw
-    document.getElementById('btn-fetch-raw').addEventListener('click', async () => {
-        try {
-            const res = await fetch(`${HOST}/api/raw`);
-            const data = await res.json();
-            
-            const resultArea = document.getElementById('raw-result-area');
-            const resultBox = document.getElementById('raw-result');
-
-            if (data.success) {
-                resultArea.classList.remove('hidden');
-                resultBox.textContent = data.text;
-            } else {
-                resultArea.classList.add('hidden');
-                showToast(data.error || 'Failed to fetch raw data', 'error');
-            }
-        } catch (err) {
-            showToast('Network error or server down', 'error');
-            console.error(err);
-        }
-    });
-
-    function clearForm() {
-        document.getElementById('write-passphrase').value = '';
-        document.getElementById('write-text').value = '';
-        document.getElementById('read-passphrase').value = '';
-        document.getElementById('decrypt-result-area').classList.add('hidden');
-        document.getElementById('raw-result-area').classList.add('hidden');
+    function escapeHtml(unsafe) {
+        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
     function showToast(message, type = 'success') {
@@ -118,12 +189,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         container.appendChild(toast);
         
-        // Remove on click
-        toast.addEventListener('click', () => {
-            toast.remove();
-        });
-
-        // Auto remove after 3s
+        toast.addEventListener('click', () => toast.remove());
+        
         setTimeout(() => {
             toast.classList.add('toast-time');
             setTimeout(() => toast.remove(), 300);
