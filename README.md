@@ -25,7 +25,10 @@ A simple Java terminal UI (TUI) app for writing and reading a `.txt` file where 
 
 ```bash
 javac src/*.java
-java -cp src Main
+java -cp . src.Main
+
+# or run directly in source-file mode
+java src/Main.java
 ```
 
 ## How It Works
