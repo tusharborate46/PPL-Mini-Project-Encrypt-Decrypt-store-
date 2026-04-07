@@ -47,3 +47,31 @@ Once running, open your web browser and go to **http://localhost:8080**.
 ## Security Note
 
 This uses robust standards (AES/GCM + PBKDF2), but is meant for learning purposes! Ensure good key management for heavy production use.
+
+## Deployment
+
+The application runs seamlessly in the cloud by splitting the frontend (Vercel) and the Java backend (Render).
+
+### 1. Deploy the Backend (Render)
+Make sure your project is pushed to a Git repository, then:
+- Create a new "Web Service" on [Render.com](https://render.com/).
+- Choose **Docker** as the Runtime / Environment.
+- Render will automatically use the `Dockerfile` to compile and start the Java server.
+- Copy your live backend URL from Render (e.g., `https://java-backend-api.onrender.com`).
+
+### 2. Connect the Frontend
+In `public/script.js`, replace the `HOST` variable at the top of the file to point to your new Render URL:
+```javascript
+const HOST = 'https://java-backend-api.onrender.com';
+```
+
+### 3. Deploy the Frontend (Vercel)
+Ensure you have the Vercel CLI installed via npm:
+```bash
+npm i -g vercel
+```
+Navigate into the `public` directory and run the deployment:
+```bash
+cd public
+vercel --prod
+```
