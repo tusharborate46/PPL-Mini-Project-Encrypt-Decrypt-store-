@@ -27,7 +27,8 @@ public class WebServer {
             fileService.write(messagesJson);
         }
 
-        int port = 8080;
+        String envPort = System.getenv("PORT");
+        int port = envPort != null ? Integer.parseInt(envPort) : 8080;
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         
         server.createContext("/", new StaticFileHandler());
