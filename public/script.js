@@ -1,4 +1,4 @@
-const HOST = 'http://localhost:8080';
+const HOST = 'https://java-backend-api.onrender.com';
 
 // State
 let state = {
